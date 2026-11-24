@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eye Gaze Glow</title>
+<style>
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 40%, #0b1224 0%, #04060d 60%, #000 100%);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #cfe4ff;
+    cursor: crosshair;
+  }
+
+  /* ---------------- THE GLOW ---------------- */
+  #glow {
+    position: fixed;
+    left: 0; top: 0;
+    width: 620px; height: 620px;
+    margin: -310px 0 0 -310px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle,
+        rgba(150, 235, 255, .55) 0%,
+        rgba(90, 170, 255, .28) 22%,
+        rgba(120, 80, 255, .12) 45%,
+        rgba(120, 80, 255, 0) 68%);
+    filter: blur(6px);
+    mix-blend-mode: screen;
+    will-change: transform;
+    opacity: 0;
+    transition: opacity .6s ease;
+    z-index: 5;
+  }
+
+  #core {
+    position: fixed;
+    left: 0; top: 0;
+    width: 64px; height: 64px;
+    margin: -32px 0 0 -32px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle,
+        rgba(255,255,255,.95) 0%,
+        rgba(150,230,255,.75) 35%,
+        rgba(120,180,255,0) 70%);
+    filter: blur(2px);
+    mix-blend-mode: screen;
+    will-change: transform;
+    opacity: 0;
+    transition: opacity .6s ease;
+    z-index: 6;
+  }
+
+  body.tracking #glow,
+  body.tracking #core { opacity: 1; }
+
+  #trailLayer { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+
+  .trail {
+    position: absolute;
+    width: 14px; height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(160,240,255,.9), rgba(120,180,255,0) 70%);
+    animation: fadeTrail .9s ease-out forwards;
+  }
+  @keyframes fadeTrail {
+    from { opacity: .9; transform: scale(1); }
+    to   { opacity: 0;  transform: scale(2.8); }
+  }
+
+  /* ---------------- START PANEL ---------------- */
+  #panel {
+    position: fixed;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 540px);
+    padding: 34px 30px;
+    border-radius: 24px;
+    background: rgba(10, 18, 34, .85);
+    border: 1px solid rgba(120, 180, 255, .25);
+    box-shadow: 0 30px 90px rgba(0,0,0,.75), inset 0 0 70px rgba(80,140,255,.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    text-align: center;
+    z-index: 100;
+    transition: opacity .45s ease, transform .45s ease;
+  }
+  #panel.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(.95);
+  }
+
+  #panel .logo { font-size: 46px; line-height: 1; margin-bottom: 10px; }
+  #panel h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .3px; }
+  #panel .sub { margin: 0 0 22px; color: #8fb3d9; font-size: 14.5px; line-height: 1.55; }
+
+  button {
+    font: inherit;
+    font-weight: 700;
+    border: 0;
+    border-radius: 14px;
+    padding: 14px 26px;
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
+  }
+  button:active { transform: scale(.97); }
+
+  .primary {
+    background: linear-gradient(135deg, #6ee7ff, #7c8cff 55%, #b06bff);
+    color: #04121f;
+    box-shadow: 0 12px 34px rgba(110, 180, 255, .35);
+    width: 100%;
+    font-size: 16px;
+  }
+  .primary:disabled { opacity: .55; cursor: progress; }
+
+  .status { margin: 16px 0 0; font-size: 13.5px; color: #7fa8d6; min-height: 18px; }
+  .tips { margin: 14px 0 0; font-size: 12px; color: #5d7691; line-height: 1.6; }
+
+  /* ---------------- TOOLBAR ---------------- */
+  #toolbar {
+    position: fixed;
+    top: 16px; right: 16px;
+    display: flex;
+    gap: 10px;
+    z-index: 90;
+  }
+  #toolbar[hidden] { display: none; }
+  #toolbar button {
+    background: rgba(15, 26, 46, .8);
+    border: 1px solid rgba(120, 180, 255, .3);
+    color: #bcd8ff;
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+  }
+  #toolbar button:hover { background: rgba(30, 50, 85, .9); }
+
+  /* ---------------- CALIBRATION ---------------- */
+  #calibLayer { position: fixed; inset: 0; z-index: 80; }
+  #calibLayer[hidden] { display: none; }
+
+  #calibInfo {
+    position: fixed;
+    top: 18px; left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 999px;
+    background: rgba(10, 20, 38, .8);
+    border: 1px solid rgba(120, 180, 255, .28);
+    font-size: 13px;
+    color: #a9c8ee;
+    white-space: nowrap;
+    backdrop-filter: blur(10px);
+  }
+
+  .calib-dot {
+    position: absolute;
+    width: 68px; height: 68px;
+    margin: -34px 0 0 -34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+    font-weight: 800;
+    color: #04121f;
+    user-select: none;
+    cursor: pointer;
+    background: radial-gradient(circle,
+        rgba(180, 245, 255, .98) 0%,
+        rgba(110, 200, 255, .75) 45%,
+        rgba(80, 140, 255, .12) 72%,
+        transparent 74%);
+    box-shadow: 0 0 34px rgba(110, 231, 255, .8);
+    animation: calibPulse 1.3s ease-in-out infinite;
+  }
+  @keyframes calibPulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.13); }
+  }
+
+  #hint {
+    position: fixed;
+    bottom: 34px; left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 24px;
+    border-radius: 999px;
+    background: rgba(10, 20, 38, .75);
+    border: 1px solid rgba(120, 180, 255, .25);
+    color: #a9c8ee;
+    font-size: 13.5px;
+    z-index: 90;
+    backdrop-filter: blur(10px);
+    transition: opacity .5s ease;
+  }
+  #hint[hidden] { display: none; }
+
+  /* ---------------- WEBCAM PREVIEW ---------------- */
+  /* WebGazer injects this container; we just move & shrink it. */
+  #webgazerVideoContainer {
+    top: auto !important;
+    bottom: 14px !important;
+    left: 14px !important;
+    transform: scale(0.6);
+    transform-origin: bottom left;
+    border-radius: 18px;
+    overflow: hidden;
+    opacity: .85;
+    box-shadow: 0 12px 40px rgba(0,0,0,.7);
+    z-index: 60 !important;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+  <div id="trailLayer"></div>
+  <div id="glow"></div>
+  <div id="core"></div>
+
+  <!-- Calibration overlay -->
+  <div id="calibLayer" hidden>
+    <div id="calibInfo"></div>
+  </div>
+
+  <!-- Controls after start -->
+  <div id="toolbar" hidden>
+    <button id="recalBtn">Recalibrate (C)</button>
+    <button id="pauseBtn">Pause (P)</button>
+  </div>
+
+  <div id="hint" hidden>Look anywhere — the glow follows your gaze ✨</div>
+
+  <!-- Start panel -->
+  <div id="panel">
+    <div class="logo">👁️</div>
+    <h1>Eye Gaze Glow</h1>
+    <p class="sub">
+      Your webcam tracks your eyes. Wherever you look on this page,
+      a soft glow appears at that exact spot.
+    </p>
+    <button id="startBtn" class="primary">Start eye tracking</button>
+    <p id="status" class="status">Press start and allow camera access.</p>
+    <p class="tips">
+      Works best in Chrome / Edge on <b>https</b> or <b>localhost</b>.
+      Face a light source, sit ~60 cm away, and keep your head fairly still.
+    </p>
+  </div>
+
+<script>
+/* ============================================================
+   1. HELPERS
+   ============================================================ */
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+/* Load WebGazer from a CDN, with fallbacks */
+async function ensureWebGazer() {
+  if (window.webgazer) return window.webgazer;
+
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/webgazer@3.3.0/dist/webgazer.min.js',
+    'https://unpkg.com/webgazer@3.3.0/dist/webgazer.min.js',
+    'https://webgazer.cs.brown.edu/webgazer.js'
+  ];
+
+  for (const url of sources) {
+    try {
+      await loadScript(url);
+      if (window.webgazer) return window.webgazer;
+    } catch (e) { /* try next */ }
+  }
+  throw new Error('Could not load the WebGazer eye-tracking library (check your internet connection).');
+}
+
+/* ============================================================
+   2. DOM
+   ============================================================ */
+const glow       = document.getElementById('glow');
+const core       = document.getElementById('core');
+const trailLayer = document.getElementById('trailLayer');
+const panel      = document.getElementById('panel');
+const startBtn   = document.getElementById('startBtn');
+const statusEl   = document.getElementById('status');
+const calibLayer = document.getElementById('calibLayer');
+const calibInfo  = document.getElementById('calibInfo');
+const toolbar    = document.getElementById('toolbar');
+const recalBtn   = document.getElementById('recalBtn');
+const pauseBtn   = document.getElementById('pauseBtn');
+const hint       = document.getElementById('hint');
+
+/* ============================================================
+   3. STATE
+   ============================================================ */
+const CLICKS_PER_POINT = 5;   // clicks on each calibration dot
+const POINTS_PER_SIDE  = 3;   // 3x3 grid = 9 dots
+
+const state = {
+  trackingReady: false,
+  calibrating: false,
+  paused: false,
+  hasGaze: false,
+  gaze:   { x: innerWidth / 2, y: innerHeight / 2 },
+  smooth: { x: innerWidth / 2, y: innerHeight / 2 }
+};
+
+/* ============================================================
+   4. RENDER LOOP  (smoothly follows the gaze)
+   ============================================================ */
+function frame() {
+  const useGaze = state.hasGaze && !state.calibrating && !state.paused;
+  const tx = useGaze ? clamp(state.gaze.x, 0, innerWidth)  : state.smooth.x;
+  const ty = useGaze ? clamp(state.gaze.y, 0, innerHeight) : state.smooth.y;
+
+  // exponential smoothing = silky motion, kills jitter
+  const k = 0.20;
+  state.smooth.x += (tx - state.smooth.x) * k;
+  state.smooth.y += (ty - state.smooth.y) * k;
+
+  const t = `translate3d(${state.smooth.x}px, ${state.smooth.y}px, 0)`;
+  glow.style.transform = t;
+  core.style.transform = t;
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* Light trail behind the glow */
+setInterval(() => {
+  if (!state.trackingReady || state.calibrating || state.paused || !state.hasGaze) return;
+  const d = document.createElement('div');
+  d.className = 'trail';
+  d.style.left = state.smooth.x + 'px';
+  d.style.top  = state.smooth.y + 'px';
+  trailLayer.appendChild(d);
+  setTimeout(() => d.remove(), 1000);
+}, 70);
+
+/* ============================================================
+   5. START TRACKING
+   ============================================================ */
+let libPromise = null;
+function preloadLibrary() {
+  if (!libPromise) libPromise = ensureWebGazer();
+  return libPromise;
+}
+window.addEventListener('load', () => { preloadLibrary().catch(() => {}); });
+
+async function startTracking() {
+  startBtn.disabled = true;
+  statusEl.textContent = 'Loading eye-tracking library…';
+
+  try {
+    await (libPromise || preloadLibrary());
+  } catch (err) {
+    statusEl.textContent = '⚠ ' + err.message;
+    startBtn.disabled = false;
+    return;
+  }
+
+  statusEl.textContent = 'Configuring tracker…';
+
+  try {
+    webgazer.setRegression('ridge');
+    webgazer.setTracker('TFFacemesh');
+    webgazer.showVideoPreview(true);
+    webgazer.showPredictionPoints(false);   // hide the built-in red dots
+    webgazer.showFaceOverlay(true);
+    webgazer.showFaceFeedbackBox(false);    // hide the green box
+    try { webgazer.applyKalmanFilter(true); } catch (e) {}
+    try { webgazer.saveDataAcrossSessions(true); } catch (e) {}
+  } catch (e) {
+    console.warn('WebGazer config warning:', e);
+  }
+
+  /* The gaze listener: fires ~30x/second with the predicted screen point */
+  webgazer.setGazeListener((data) => {
+    if (!data) return;
+    if (!Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
+    state.gaze.x = data.x;
+    state.gaze.y = data.y;
+    state.hasGaze = true;
+  });
+
+  statusEl.textContent = 'Waiting for camera permission…';
+
+  try {
+    await Promise.resolve(webgazer.begin());
+  } catch (err) {
+    statusEl.textContent = '⚠ Camera error: ' + (err && err.message ? err.message : err);
+    startBtn.disabled = false;
+    return;
+  }
+
+  state.trackingReady = true;
+  panel.classList.add('hidden');
+  toolbar.hidden = false;
+
+  startCalibration();
+}
+
+startBtn.addEventListener('click', startTracking);
+
+/* ============================================================
+   6. CALIBRATION  (this is what makes the gaze accurate)
+   ============================================================ */
+let calibPts = [];
+let calibIdx = 0;
+let calibCount = 0;
+
+function startCalibration() {
+  state.calibrating = true;
+  state.hasGaze = false;
+  document.body.classList.remove('tracking');
+  hint.hidden = true;
+
+  calibLayer.hidden = false;
+  calibLayer.querySelectorAll('.calib-dot').forEach(n => n.remove());
+
+  calibPts = [];
+  for (let r = 0; r < POINTS_PER_SIDE; r++) {
+    for (let c = 0; c < POINTS_PER_SIDE; c++) {
+      calibPts.push({
+        x: (c + 0.5) / POINTS_PER_SIDE * innerWidth,
+        y: (r + 0.5) / POINTS_PER_SIDE * innerHeight
+      });
+    }
+  }
+
+  calibIdx = 0;
+  calibCount = 0;
+
+  renderCalibDot();
+  updateCalibInfo();
+}
+
+function updateCalibInfo() {
+  const total = calibPts.length * CLICKS_PER_POINT;
+  const done  = Math.min(calibIdx * CLICKS_PER_POINT + calibCount, total);
+  calibInfo.textContent =
+    `Calibration ${done}/${total} — look straight at the dot and click it ${CLICKS_PER_POINT}×`;
+}
+
+function renderCalibDot() {
+  calibLayer.querySelectorAll('.calib-dot').forEach(n => n.remove());
+  if (calibIdx >= calibPts.length) return;
+
+  const p = calibPts[calibIdx];
+  const dot = document.createElement('div');
+  dot.className = 'calib-dot';
+  dot.style.left = p.x + 'px';
+  dot.style.top  = p.y + 'px';
+  dot.textContent = CLICKS_PER_POINT - calibCount;
+
+  dot.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    onCalibClick(p, dot);
+  });
+
+  calibLayer.appendChild(dot);
+}
+
+function recordTrainingPoint(x, y) {
+  try {
+    if (window.webgazer && typeof webgazer.recordScreenPosition === 'function') {
+      webgazer.recordScreenPosition(x, y, 'click');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function onCalibClick(p, dot) {
+  recordTrainingPoint(p.x, p.y);
+
+  calibCount++;
+  if (calibCount >= CLICKS_PER_POINT) {
+    calibCount = 0;
+    calibIdx++;
+  }
+
+  updateCalibInfo();
+
+  if (calibIdx >= calibPts.length) {
+    finishCalibration();
+    return;
+  }
+
+  dot.textContent = CLICKS_PER_POINT - calibCount;
+  // little "pop" feedback
+  dot.style.animation = 'none';
+  void dot.offsetWidth;
+  dot.style.animation = '';
+}
+
+function finishCalibration() {
+  if (!state.calibrating) return;
+  state.calibrating = false;
+
+  calibLayer.hidden = true;
+  calibLayer.querySelectorAll('.calib-dot').forEach(n => n.remove());
+
+  state.smooth.x = innerWidth / 2;
+  state.smooth.y = innerHeight / 2;
+
+  document.body.classList.add('tracking');
+  hint.hidden = false;
+  setTimeout(() => { hint.hidden = true; }, 6000);
+}
+
+/* ============================================================
+   7. CONTROLS
+   ============================================================ */
+recalBtn.addEventListener('click', () => {
+  if (!state.trackingReady) return;
+  startCalibration();
+});
+
+pauseBtn.addEventListener('click', () => {
+  if (!state.trackingReady) return;
+  state.paused = !state.paused;
+  try {
+    if (state.paused) webgazer.pause(); else webgazer.resume();
+  } catch (e) {}
+  pauseBtn.textContent = state.paused ? 'Resume (P)' : 'Pause (P)';
+  document.body.classList.toggle('tracking', !state.paused && !state.calibrating);
+});
+
+document.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'c' && state.trackingReady) startCalibration();
+  if (k === 'p' && state.trackingReady) pauseBtn.click();
+});
+
+/* Keep things sane when the window is resized */
+window.addEventListener('resize', () => {
+  if (state.calibrating) startCalibration();
+});
+</script>
+</body>
+</html>
